@@ -672,31 +672,44 @@ async function lint(code) {
   return result.results[0].warnings;
 }
 
+/**
+ * Test CSS must be formatted the way real source is — one declaration per
+ * line, each terminated — or stylelint-config-standard's unrelated formatting
+ * rules fire too and mask which rule actually caught the physical property.
+ */
+function rule(...declarations) {
+  return `.t-a {\n${declarations.map((d) => `  ${d};`).join('\n')}\n}\n`;
+}
+
 describe('stylelint config', () => {
-  it('rejects physical margin-left', async () => {
-    const warnings = await lint('.t-a { margin-left: 4px; }');
+  it('rejects physical margin-left, naming the logical replacement', async () => {
+    const warnings = await lint(rule('margin-left: 4px'));
+    expect(warnings.map((w) => w.rule)).toContain('property-disallowed-list');
     expect(warnings.map((w) => w.text).join(' ')).toMatch(/margin-inline-start/);
   });
 
-  it('rejects physical padding-right', async () => {
-    const warnings = await lint('.t-a { padding-right: 4px; }');
-    expect(warnings).not.toHaveLength(0);
+  it('rejects physical padding-right, naming the logical replacement', async () => {
+    const warnings = await lint(rule('padding-right: 4px'));
+    expect(warnings.map((w) => w.rule)).toContain('property-disallowed-list');
+    expect(warnings.map((w) => w.text).join(' ')).toMatch(/padding-inline-end/);
   });
 
-  it('rejects bare left/right offsets', async () => {
-    expect(await lint('.t-a { position: absolute; left: 0; }')).not.toHaveLength(0);
-    expect(await lint('.t-a { position: absolute; right: 0; }')).not.toHaveLength(0);
+  it.each(['left', 'right'])('rejects the bare %s offset', async (property) => {
+    const warnings = await lint(rule('position: absolute', `${property}: 0`));
+    expect(warnings.map((w) => w.rule)).toContain('property-disallowed-list');
+    expect(warnings.map((w) => w.text).join(' ')).toMatch(/inset-inline-start/);
   });
 
-  it('accepts the logical equivalents', async () => {
+  it('accepts the logical equivalents with no warning from any rule', async () => {
     const warnings = await lint(
-      '.t-a { margin-inline-start: 4px; padding-inline-end: 4px; position: absolute; inset-inline-start: 0; }',
+      rule('margin-inline-start: 4px', 'padding-inline-end: 4px', 'position: absolute', 'inset-inline-start: 0'),
     );
-    expect(warnings).toEqual([]);
+    expect(warnings.map((w) => `${w.rule}: ${w.text}`)).toEqual([]);
   });
 
   it('accepts custom properties on the --t- prefix', async () => {
-    expect(await lint(':root { --t-space-3: 0.75rem; }')).toEqual([]);
+    const warnings = await lint(':root {\n  --t-space-3: 0.75rem;\n}\n');
+    expect(warnings.map((w) => `${w.rule}: ${w.text}`)).toEqual([]);
   });
 });
 ```
@@ -750,7 +763,9 @@ Expected: FAIL — `No configuration provided` (the config file does not exist).
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd theme1 && npx vitest run tests/lint/stylelint-rules.test.js`
-Expected: PASS — 5 tests.
+Expected: PASS — 6 tests (the bare-offset case runs twice via `it.each`).
+
+If a warning from an unrelated rule appears, fix the **test CSS formatting**. Never disable the rule: `stylelint-config-standard`'s rules are the house style for the whole project, and relaxing one to accommodate a test string weakens every stylesheet Phases 01–12 will write.
 
 - [ ] **Step 5: Write `eslint.config.js`**
 
