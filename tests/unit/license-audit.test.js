@@ -158,4 +158,36 @@ describe('collectPackages traversal', () => {
     });
     await expect(collectPackages(dir)).resolves.toHaveLength(3);
   });
+
+  it('audits a nested copy rather than the hoisted one that does not ship', async () => {
+    // alpha depends on beta, but carries its own conflicting copy. npm nests it,
+    // and the nested copy is what gets bundled — so it is the one to audit.
+    await writePkg('node_modules/beta/package.json', { name: 'beta', version: '2.0.0', license: 'MIT' });
+    await writePkg('node_modules/alpha/node_modules/beta/package.json', {
+      name: 'beta',
+      version: '1.0.0',
+      license: 'GPL-3.0',
+    });
+
+    const packages = await collectPackages(dir);
+    const beta = packages.filter((p) => p.name === 'beta');
+    expect(beta.map((p) => `${p.version}:${p.license}`)).toContain('1.0.0:GPL-3.0');
+    expect(classify(packages).ok, 'a nested GPL copy must fail the audit').toBe(false);
+  });
+
+  it('walks up to the root when a package has no nested copy', async () => {
+    const names = (await collectPackages(dir)).map((p) => p.name);
+    expect(names, 'beta resolves from the hoisted location').toContain('beta');
+  });
+
+  it('keeps two versions of one name as separate entries', async () => {
+    await writePkg('node_modules/beta/package.json', { name: 'beta', version: '2.0.0', license: 'MIT' });
+    await writePkg('node_modules/alpha/node_modules/beta/package.json', {
+      name: 'beta',
+      version: '1.0.0',
+      license: 'MIT',
+    });
+    const versions = (await collectPackages(dir)).filter((p) => p.name === 'beta').map((p) => p.version);
+    expect(new Set(versions).size).toBe(versions.length);
+  });
 });
