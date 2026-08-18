@@ -137,6 +137,19 @@ describe('meetsAA', () => {
   it('rejects an unknown kind rather than silently passing', () => {
     expect(() => meetsAA(21, 'decorative')).toThrow(/kind/i);
   });
+
+  // A plain object literal inherits from Object.prototype, so a lookup for any
+  // of these names returns a function and an `=== undefined` guard never fires.
+  it.each(['toString', 'constructor', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', '__proto__'])(
+    'rejects the inherited property name %s',
+    (kind) => {
+      expect(() => meetsAA(21, kind)).toThrow(/kind/i);
+    },
+  );
+
+  it.each([undefined, null, '', 0])('rejects %j as a kind', (kind) => {
+    expect(() => meetsAA(21, kind)).toThrow(/kind/i);
+  });
 });
 ```
 
@@ -182,20 +195,26 @@ export function contrastRatio(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Does this ratio clear WCAG 2.2 AA for the given kind of content? */
+/**
+ * Does this ratio clear WCAG 2.2 AA for the given kind of content?
+ *
+ * `Object.hasOwn` rather than an `=== undefined` check: a plain object literal
+ * inherits from Object.prototype, so `AA_THRESHOLDS['toString']` resolves to a
+ * function and the undefined guard would not fire — `meetsAA(21, 'toString')`
+ * would silently return false instead of throwing.
+ */
 export function meetsAA(ratio, kind) {
-  const threshold = AA_THRESHOLDS[kind];
-  if (threshold === undefined) {
+  if (!Object.hasOwn(AA_THRESHOLDS, kind)) {
     throw new Error(`Unknown contrast kind: ${kind}. Use 'text', 'large' or 'ui'.`);
   }
-  return ratio >= threshold;
+  return ratio >= AA_THRESHOLDS[kind];
 }
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd theme1 && npx vitest run tests/unit/contrast.test.js`
-Expected: PASS — 13 tests.
+Expected: PASS — 23 tests (13 original, plus 6 inherited-property-name cases and 4 falsy-kind cases).
 
 - [ ] **Step 5: Commit**
 

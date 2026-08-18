@@ -64,4 +64,17 @@ describe('meetsAA', () => {
   it('rejects an unknown kind rather than silently passing', () => {
     expect(() => meetsAA(21, 'decorative')).toThrow(/kind/i);
   });
+
+  // A plain object literal inherits from Object.prototype, so a lookup for any
+  // of these names returns a function and an  guard never fires.
+  it.each(['toString', 'constructor', 'valueOf', 'hasOwnProperty', 'isPrototypeOf', '__proto__'])(
+    'rejects the inherited property name %s',
+    (kind) => {
+      expect(() => meetsAA(21, kind)).toThrow(/kind/i);
+    },
+  );
+
+  it.each([undefined, null, '', 0])('rejects %j as a kind', (kind) => {
+    expect(() => meetsAA(21, kind)).toThrow(/kind/i);
+  });
 });

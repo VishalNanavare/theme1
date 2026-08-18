@@ -32,11 +32,17 @@ export function contrastRatio(a, b) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Does this ratio clear WCAG 2.2 AA for the given kind of content? */
+/**
+ * Does this ratio clear WCAG 2.2 AA for the given kind of content?
+ *
+ * `Object.hasOwn` rather than an `=== undefined` check: a plain object literal
+ * inherits from Object.prototype, so `AA_THRESHOLDS['toString']` resolves to a
+ * function and the undefined guard would not fire — `meetsAA(21, 'toString')`
+ * would silently return false instead of throwing.
+ */
 export function meetsAA(ratio, kind) {
-  const threshold = AA_THRESHOLDS[kind];
-  if (threshold === undefined) {
+  if (!Object.hasOwn(AA_THRESHOLDS, kind)) {
     throw new Error(`Unknown contrast kind: ${kind}. Use 'text', 'large' or 'ui'.`);
   }
-  return ratio >= threshold;
+  return ratio >= AA_THRESHOLDS[kind];
 }
