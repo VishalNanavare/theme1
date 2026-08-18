@@ -297,6 +297,7 @@ Expected: FAIL — `Failed to resolve import ".../scripts/render-pages.mjs"`.
 
 ```js
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import nunjucks from 'nunjucks';
@@ -360,7 +361,7 @@ export async function renderAll({
   return written;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const written = await renderAll();
   console.log(`rendered ${written.length} pages`);
 }
@@ -1010,6 +1011,7 @@ Expected: FAIL — module not found.
 
 ```js
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 
@@ -1116,7 +1118,7 @@ export function renderNotices(packages) {
   ].join('\n');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = process.cwd();
   const packages = await collectPackages(root);
   const { ok, violations } = classify(packages);
@@ -1224,6 +1226,7 @@ Expected: FAIL — module not found.
 
 ```js
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { gzip } from 'node:zlib';
@@ -1246,7 +1249,7 @@ export function evaluate(entries, budgets = BUDGETS) {
   return { ok: failures.length === 0, failures };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = process.cwd();
   const files = await fg('assets/**/*.{css,js}', { cwd: path.join(root, 'dist') });
 

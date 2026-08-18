@@ -1762,6 +1762,7 @@ Expected: FAIL — module not found.
 
 ```js
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { compileAsync } from 'sass';
@@ -1806,7 +1807,7 @@ export function toScss({ light, dark }) {
   return `${body('Light theme', light)}\n\n${body('Dark theme', dark)}\n`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const root = process.cwd();
   const stylesDir = path.join(root, 'src/styles');
   const { css } = await compileAsync(path.join(stylesDir, 'theme1.scss'), {

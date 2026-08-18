@@ -147,6 +147,7 @@ Run: `cd theme1 && npm install --save-dev feather-icons`
 
 ```js
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -188,7 +189,7 @@ export function buildSprite(icons, names) {
   return `<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="display: none;">${symbols.join('')}</svg>`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { icons } = await import('feather-icons');
   const contents = Object.fromEntries(Object.entries(icons).map(([name, icon]) => [name, icon.contents]));
 
