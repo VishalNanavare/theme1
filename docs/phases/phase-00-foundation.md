@@ -1077,6 +1077,30 @@ describe('collectPackages traversal', () => {
     await writePkg('node_modules/beta/package.json', { name: 'beta', version: '1.0.0', license: 'MIT', dependencies: { alpha: '^1.0.0' } });
     await expect(collectPackages(dir)).resolves.toHaveLength(3);
   });
+
+  it('audits a nested copy rather than the hoisted one that does not ship', async () => {
+    // alpha depends on beta, but carries its own conflicting copy. npm nests it,
+    // and the nested copy is what gets bundled — so it is the one to audit.
+    await writePkg('node_modules/beta/package.json', { name: 'beta', version: '2.0.0', license: 'MIT' });
+    await writePkg('node_modules/alpha/node_modules/beta/package.json', { name: 'beta', version: '1.0.0', license: 'GPL-3.0' });
+
+    const packages = await collectPackages(dir);
+    const beta = packages.filter((p) => p.name === 'beta');
+    expect(beta.map((p) => `${p.version}:${p.license}`)).toContain('1.0.0:GPL-3.0');
+    expect(classify(packages).ok, 'a nested GPL copy must fail the audit').toBe(false);
+  });
+
+  it('walks up to the root when a package has no nested copy', async () => {
+    const names = (await collectPackages(dir)).map((p) => p.name);
+    expect(names, 'beta resolves from the hoisted location').toContain('beta');
+  });
+
+  it('keeps two versions of one name as separate entries', async () => {
+    await writePkg('node_modules/beta/package.json', { name: 'beta', version: '2.0.0', license: 'MIT' });
+    await writePkg('node_modules/alpha/node_modules/beta/package.json', { name: 'beta', version: '1.0.0', license: 'MIT' });
+    const versions = (await collectPackages(dir)).filter((p) => p.name === 'beta').map((p) => p.version);
+    expect(new Set(versions).size).toBe(versions.length);
+  });
 });
 ```
 
@@ -1133,11 +1157,33 @@ export function classify(packages) {
   return { ok: violations.length === 0, violations };
 }
 
-async function readManifest(root, name) {
-  try {
-    return JSON.parse(await readFile(path.join(root, 'node_modules', name, 'package.json'), 'utf8'));
-  } catch {
-    return null;
+/**
+ * Resolve a package the way Node does: look in the requiring package's own
+ * node_modules first, then walk up to the project root.
+ *
+ * A flat `<root>/node_modules/<name>` lookup is wrong. npm nests a copy
+ * whenever a transitive dependency needs a version that conflicts with the
+ * hoisted one, and that nested copy is what actually gets bundled. Auditing
+ * only the hoisted version would examine a package that never ships while
+ * ignoring the one that does.
+ *
+ * Returns `{ manifest, dir }` so the caller can resolve this package's own
+ * children relative to where it was found, or null if nothing resolves.
+ */
+async function readManifest(root, name, fromDir = root) {
+  let dir = fromDir;
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', name);
+    try {
+      const manifest = JSON.parse(await readFile(path.join(candidate, 'package.json'), 'utf8'));
+      return { manifest, dir: candidate };
+    } catch {
+      // Not here — continue up toward the root.
+    }
+    if (path.resolve(dir) === path.resolve(root)) return null;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
   }
 }
 
@@ -1151,36 +1197,56 @@ async function readManifest(root, name) {
  */
 export async function collectPackages(root = process.cwd()) {
   const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-  const seen = new Map();
 
-  const record = (name, meta, scope) => {
-    seen.set(name, {
+  // Keyed by name@version, not name: two versions of one package can both ship
+  // when npm nests a conflicting copy, and both need auditing.
+  const seen = new Map();
+  const visited = new Set();
+
+  const record = (name, found, scope) => {
+    const manifest = found?.manifest;
+    const version = manifest?.version ?? 'not-installed';
+    const key = `${name}@${version}`;
+    if (seen.has(key)) return key;
+    seen.set(key, {
       name,
-      version: meta?.version ?? 'not-installed',
-      license: meta ? normalizeLicense(meta.license ?? meta.licenses?.[0]?.type ?? meta.licenses?.[0]) : 'UNKNOWN',
+      version,
+      license: manifest
+        ? normalizeLicense(manifest.license ?? manifest.licenses?.[0]?.type ?? manifest.licenses?.[0])
+        : 'UNKNOWN',
       scope,
     });
+    return key;
   };
 
-  // Runtime: breadth-first over the whole reachable graph.
-  const queue = Object.keys(pkg.dependencies ?? {});
+  // Runtime: breadth-first over the whole reachable graph, resolving each
+  // package's children from where that package itself was found.
+  const queue = Object.keys(pkg.dependencies ?? {}).map((name) => ({ name, fromDir: root }));
   while (queue.length > 0) {
-    const name = queue.shift();
-    if (seen.has(name)) continue;
-    const meta = await readManifest(root, name);
-    record(name, meta, 'runtime');
-    for (const child of Object.keys(meta?.dependencies ?? {})) {
-      if (!seen.has(child)) queue.push(child);
+    const { name, fromDir } = queue.shift();
+    const visitKey = `${fromDir} ${name}`;
+    if (visited.has(visitKey)) continue;
+    visited.add(visitKey);
+
+    const found = await readManifest(root, name, fromDir);
+    record(name, found, 'runtime');
+    if (!found) continue;
+
+    for (const child of Object.keys(found.manifest.dependencies ?? {})) {
+      queue.push({ name: child, fromDir: found.dir });
     }
   }
 
-  // Dev: declared packages only. A name already recorded as runtime stays runtime.
+  // Dev: declared packages only, resolved from the root. Their transitive tree
+  // never reaches dist/, so it is deliberately not walked.
   for (const name of Object.keys(pkg.devDependencies ?? {})) {
-    if (seen.has(name)) continue;
-    record(name, await readManifest(root, name), 'dev');
+    const found = await readManifest(root, name, root);
+    const key = `${name}@${found?.manifest?.version ?? 'not-installed'}`;
+    if (seen.has(key)) continue;
+    record(name, found, 'dev');
   }
 
-  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
 }
 
 /** Build the THIRD-PARTY-NOTICES.md body. */
@@ -1224,7 +1290,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd theme1 && npx vitest run tests/unit/license-audit.test.js`
-Expected: PASS — 17 tests.
+Expected: PASS — 20 tests.
 
 - [ ] **Step 5: Run the audit against the real tree**
 
