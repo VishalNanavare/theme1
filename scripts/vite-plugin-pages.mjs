@@ -6,7 +6,12 @@ import { renderAll, OUT_DIR, PAGES_DIR, DATA_DIR } from './render-pages.mjs';
  * and re-renders + full-reloads when a template or data file changes in dev.
  */
 export default function pagesPlugin({ root = process.cwd() } = {}) {
-  const watched = [path.join(root, PAGES_DIR), path.join(root, DATA_DIR), path.join(root, 'src/layouts'), path.join(root, 'src/partials')];
+  const watched = [
+    path.join(root, PAGES_DIR),
+    path.join(root, DATA_DIR),
+    path.join(root, 'src/layouts'),
+    path.join(root, 'src/partials'),
+  ];
   const isWatched = (file) => watched.some((dir) => file.startsWith(dir + path.sep) || file.startsWith(dir + '/'));
 
   return {

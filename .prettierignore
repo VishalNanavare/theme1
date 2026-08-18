@@ -1,0 +1,6 @@
+dist/
+/src/*.html
+node_modules/
+package-lock.json
+THIRD-PARTY-NOTICES.md
+docs/
