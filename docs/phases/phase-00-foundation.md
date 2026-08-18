@@ -1224,7 +1224,8 @@ export async function collectPackages(root = process.cwd()) {
   const queue = Object.keys(pkg.dependencies ?? {}).map((name) => ({ name, fromDir: root }));
   while (queue.length > 0) {
     const { name, fromDir } = queue.shift();
-    const visitKey = `${fromDir} ${name}`;
+    // The resolution target is itself the natural identity for a visit.
+    const visitKey = path.join(fromDir, "node_modules", name);
     if (visited.has(visitKey)) continue;
     visited.add(visitKey);
 
