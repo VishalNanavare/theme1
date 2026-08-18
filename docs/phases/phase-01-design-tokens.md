@@ -262,7 +262,11 @@ function tokenValue(name) {
 }
 
 describe('primitive colour ramps', () => {
-  const ramps = ['indigo', 'slate', 'emerald', 'amber', 'red', 'cyan'];
+  // `ink` belongs in this list, not in a weaker separate check: it is the ramp
+  // Tasks 3 and 4 build every dark surface on, so it needs the same ordering
+  // guarantee as the rest. A partial existence-only check would let a future
+  // edit break dark mode's contrast with the suite still green.
+  const ramps = ['indigo', 'slate', 'ink', 'emerald', 'amber', 'red', 'cyan'];
   const steps = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
 
   it.each(ramps)('emits all 11 steps of %s', (ramp) => {
@@ -275,18 +279,9 @@ describe('primitive colour ramps', () => {
     expect(tokenValue('--t-indigo-500').toUpperCase()).toBe('#3D5AFE');
   });
 
-  it('emits the dark-chrome ink ramp', () => {
-    for (const step of [500, 600, 700, 800, 900]) {
-      expect(tokenValue(`--t-ink-${step}`), `--t-ink-${step}`).toBeDefined();
-    }
-  });
-
-  it('makes every ramp step a valid hex colour', () => {
-    for (const ramp of [...ramps, 'ink']) {
-      for (const step of steps) {
-        const value = tokenValue(`--t-${ramp}-${step}`);
-        if (value) expect(value, `--t-${ramp}-${step}`).toMatch(/^#[0-9a-f]{6}$/i);
-      }
+  it.each(ramps)('makes every step of %s a valid six-digit hex colour', (ramp) => {
+    for (const step of steps) {
+      expect(tokenValue(`--t-${ramp}-${step}`), `--t-${ramp}-${step}`).toMatch(/^#[0-9a-f]{6}$/i);
     }
   });
 
