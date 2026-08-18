@@ -26,6 +26,25 @@
         "message": "Use the logical property instead (margin-inline-start, padding-inline-end, inset-inline-start, border-start-start-radius, …). Physical left/right properties break RTL."
       }
     ],
+    "declaration-property-value-disallowed-list": [
+      {
+        "margin": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "padding": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "inset": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-width": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-color": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-style": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-radius": ["/\\s/"],
+        "float": ["left", "right"],
+        "clear": ["left", "right"],
+        "text-align": ["left", "right"],
+        "background-position": ["/\\bleft\\b|\\bright\\b/"],
+        "transform-origin": ["/\\bleft\\b|\\bright\\b/"]
+      },
+      {
+        "message": "This value encodes left/right asymmetry and will not mirror in RTL. Use the logical form: padding-inline / margin-inline / inset-inline, the border-*-*-radius longhands, float: inline-start, or text-align: start|end."
+      }
+    ],
     "custom-property-pattern": "^t-[a-z0-9]+(-[a-z0-9]+)*$",
     "selector-class-pattern": "^t-[a-z0-9]+(-[a-z0-9]+)*(__[a-z0-9]+(-[a-z0-9]+)*)?(--[a-z0-9]+(-[a-z0-9]+)*)?$",
     "scss/dollar-variable-pattern": "^[a-z][a-z0-9-]*$",

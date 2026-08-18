@@ -49,3 +49,53 @@ describe('stylelint config', () => {
     expect(warnings.map((w) => `${w.rule}: ${w.text}`)).toEqual([]);
   });
 });
+
+/**
+ * A property-level ban cannot see inside a shorthand, so `padding: 0 20px 0 4px`
+ * would slip through with exactly the RTL breakage `padding-left` was banned for.
+ * These value-level rules reject only the forms that actually encode left/right
+ * asymmetry: the 4-value box shorthands, multi-value border-radius, and the
+ * directional keywords. 1-, 2- and 3-value box shorthands are symmetric on the
+ * inline axis and stay legal, so the rule adds no friction to ordinary CSS.
+ */
+describe('asymmetric shorthand values', () => {
+  const offenders = [
+    ['4-value padding', 'padding: 0 20px 0 4px'],
+    ['4-value margin', 'margin: 0 auto 0 8px'],
+    ['4-value inset', 'inset: 0 20px 0 4px'],
+    ['4-value border-width', 'border-width: 1px 2px 1px 4px'],
+    ['multi-value border-radius', 'border-radius: 8px 0 0 8px'],
+    ['float: left', 'float: left'],
+    ['float: right', 'float: right'],
+    ['clear: right', 'clear: right'],
+    ['text-align: left', 'text-align: left'],
+    ['text-align: right', 'text-align: right'],
+    ['background-position with a left keyword', 'background-position: left 10px'],
+  ];
+
+  it.each(offenders)('rejects %s', async (_label, declaration) => {
+    const warnings = await lint(rule(declaration));
+    expect(warnings.map((w) => w.rule)).toContain('declaration-property-value-disallowed-list');
+  });
+
+  const allowed = [
+    ['1-value padding', 'padding: 1rem'],
+    ['2-value padding — block then inline, already symmetric', 'padding: 1rem 2rem'],
+    ['3-value padding — inline value is shared', 'padding: 1rem 2rem 3rem'],
+    ['2-value margin with auto', 'margin: 0 auto'],
+    ['single-value inset', 'inset: 0'],
+    ['uniform border-radius', 'border-radius: 8px'],
+    ['logical float', 'float: inline-start'],
+    ['logical text-align', 'text-align: end'],
+  ];
+
+  it.each(allowed)('accepts %s', async (_label, declaration) => {
+    const warnings = await lint(rule(declaration));
+    expect(warnings.map((w) => `${w.rule}: ${w.text}`)).toEqual([]);
+  });
+
+  it('names the logical replacement in the message', async () => {
+    const warnings = await lint(rule('padding: 0 20px 0 4px'));
+    expect(warnings.map((w) => w.text).join(' ')).toMatch(/padding-inline/);
+  });
+});
