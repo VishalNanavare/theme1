@@ -849,7 +849,9 @@ git commit -m "chore(lint): eslint, stylelint with logical-property rule, pretti
   - `normalizeLicense(raw: string | { type: string } | undefined) => string`
   - `classify(packages: Array<{ name, version, license, scope: 'runtime' | 'dev' }>) => { violations: Array<{name, version, license, scope, reason}>, ok: boolean }`
   - `renderNotices(packages) => string` — the `THIRD-PARTY-NOTICES.md` body
-  - `collectPackages(root) => Promise<Package[]>` — reads `package.json` + `node_modules/*/package.json`
+  - `collectPackages(root) => Promise<Package[]>` — reads `package.json` + `node_modules/**/package.json`
+
+**Traversal rule.** Runtime dependencies ship, so the audit must walk them **transitively**: every package reachable from `dependencies`, then from each of those packages' own `dependencies`. Dev dependencies never reach `dist/`, so only the **directly declared** devDependencies are audited; their transitive tree is out of scope and must not be scanned. This distinction matters — a first pass that audited only direct packages missed that the dev tree pulls in `argparse` (Python-2.0), `caniuse-lite` (CC-BY-4.0), `mdn-data` (CC0-1.0) and `sax` (BlueOak-1.0.0), none of which are on the allow-list and none of which are distributed.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -933,6 +935,70 @@ describe('renderNotices', () => {
     expect(md.indexOf('## Runtime dependencies')).toBeLessThan(md.indexOf('## Development dependencies'));
   });
 });
+
+describe('collectPackages traversal', () => {
+  let dir;
+
+  const writePkg = async (relative, manifest) => {
+    const target = path.join(dir, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, JSON.stringify(manifest), 'utf8');
+  };
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'theme1-audit-'));
+    await writePkg('package.json', {
+      name: 'root',
+      dependencies: { alpha: '^1.0.0' },
+      devDependencies: { tooling: '^1.0.0' },
+    });
+    await writePkg('node_modules/alpha/package.json', { name: 'alpha', version: '1.0.0', license: 'MIT', dependencies: { beta: '^1.0.0' } });
+    await writePkg('node_modules/beta/package.json', { name: 'beta', version: '1.0.0', license: 'GPL-3.0' });
+    await writePkg('node_modules/tooling/package.json', { name: 'tooling', version: '1.0.0', license: 'MIT', dependencies: { grubby: '^1.0.0' } });
+    await writePkg('node_modules/grubby/package.json', { name: 'grubby', version: '1.0.0', license: 'CC-BY-4.0' });
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('follows runtime dependencies transitively, because they ship', async () => {
+    const names = (await collectPackages(dir)).filter((p) => p.scope === 'runtime').map((p) => p.name);
+    expect(names).toContain('alpha');
+    expect(names).toContain('beta');
+  });
+
+  it('fails the audit on a transitive runtime licence violation', async () => {
+    expect(classify(await collectPackages(dir)).ok).toBe(false);
+  });
+
+  it('audits declared dev dependencies but not their transitive tree, which never ships', async () => {
+    const names = (await collectPackages(dir)).map((p) => p.name);
+    expect(names).toContain('tooling');
+    expect(names, 'a transitive dev dependency must not be audited').not.toContain('grubby');
+  });
+
+  it('records a declared package that is not installed rather than skipping it', async () => {
+    await writePkg('package.json', { name: 'root', dependencies: { ghost: '^1.0.0' } });
+    const [entry] = await collectPackages(dir);
+    expect(entry).toMatchObject({ name: 'ghost', version: 'not-installed', license: 'UNKNOWN' });
+  });
+
+  it('terminates on a dependency cycle', async () => {
+    await writePkg('node_modules/beta/package.json', { name: 'beta', version: '1.0.0', license: 'MIT', dependencies: { alpha: '^1.0.0' } });
+    await expect(collectPackages(dir)).resolves.toHaveLength(3);
+  });
+});
+```
+
+The test file's imports become:
+
+```js
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { normalizeLicense, classify, renderNotices, collectPackages, RUNTIME_ALLOWED, DEV_ALLOWED } from '../../scripts/license-audit.mjs';
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -978,28 +1044,53 @@ export function classify(packages) {
   return { ok: violations.length === 0, violations };
 }
 
-/** Read the dependency tree's licence metadata from node_modules. */
+async function readManifest(root, name) {
+  try {
+    return JSON.parse(await readFile(path.join(root, 'node_modules', name, 'package.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read licence metadata from node_modules.
+ *
+ * Runtime dependencies are walked TRANSITIVELY, because everything reachable
+ * from `dependencies` can end up in the shipped bundle. Dev dependencies are
+ * audited at the top level only — they never reach dist/, so their transitive
+ * tree is deliberately out of scope.
+ */
 export async function collectPackages(root = process.cwd()) {
   const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-  const scopes = [
-    ['runtime', Object.keys(pkg.dependencies ?? {})],
-    ['dev', Object.keys(pkg.devDependencies ?? {})],
-  ];
-
   const seen = new Map();
-  for (const [scope, names] of scopes) {
-    for (const name of names) {
-      if (seen.has(name) && seen.get(name).scope === 'runtime') continue;
-      let meta;
-      try {
-        meta = JSON.parse(await readFile(path.join(root, 'node_modules', name, 'package.json'), 'utf8'));
-      } catch {
-        seen.set(name, { name, version: 'not-installed', license: 'UNKNOWN', scope });
-        continue;
-      }
-      seen.set(name, { name, version: meta.version ?? 'unknown', license: normalizeLicense(meta.license ?? meta.licenses?.[0]), scope });
+
+  const record = (name, meta, scope) => {
+    seen.set(name, {
+      name,
+      version: meta?.version ?? 'not-installed',
+      license: meta ? normalizeLicense(meta.license ?? meta.licenses?.[0]?.type ?? meta.licenses?.[0]) : 'UNKNOWN',
+      scope,
+    });
+  };
+
+  // Runtime: breadth-first over the whole reachable graph.
+  const queue = Object.keys(pkg.dependencies ?? {});
+  while (queue.length > 0) {
+    const name = queue.shift();
+    if (seen.has(name)) continue;
+    const meta = await readManifest(root, name);
+    record(name, meta, 'runtime');
+    for (const child of Object.keys(meta?.dependencies ?? {})) {
+      if (!seen.has(child)) queue.push(child);
     }
   }
+
+  // Dev: declared packages only. A name already recorded as runtime stays runtime.
+  for (const name of Object.keys(pkg.devDependencies ?? {})) {
+    if (seen.has(name)) continue;
+    record(name, await readManifest(root, name), 'dev');
+  }
+
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -1044,7 +1135,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd theme1 && npx vitest run tests/unit/license-audit.test.js`
-Expected: PASS — 12 tests.
+Expected: PASS — 17 tests.
 
 - [ ] **Step 5: Run the audit against the real tree**
 
