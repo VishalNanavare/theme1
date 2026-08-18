@@ -1,9 +1,14 @@
 import path from 'node:path';
-import { renderAll, OUT_DIR, PAGES_DIR, DATA_DIR } from './render-pages.mjs';
+import { renderAll, PAGES_DIR, DATA_DIR } from './render-pages.mjs';
 
 /**
- * Renders src/pages/*.njk into src/*.html before Vite reads its inputs,
- * and re-renders + full-reloads when a template or data file changes in dev.
+ * Re-renders src/pages/*.njk into src/*.html and full-reloads when a
+ * template or data file changes in dev.
+ *
+ * The initial render (for both `build` and `dev`) happens once in
+ * vite.config.js, at config-resolution time, before this plugin's hooks run
+ * — a `buildStart` render here would be a second, fully redundant pass over
+ * the same templates.
  */
 export default function pagesPlugin({ root = process.cwd() } = {}) {
   const watched = [
@@ -16,10 +21,6 @@ export default function pagesPlugin({ root = process.cwd() } = {}) {
 
   return {
     name: 'theme1:pages',
-
-    async buildStart() {
-      await renderAll({ root });
-    },
 
     configureServer(server) {
       for (const dir of watched) server.watcher.add(dir);
@@ -34,7 +35,5 @@ export default function pagesPlugin({ root = process.cwd() } = {}) {
         }
       });
     },
-
-    outDirName: OUT_DIR,
   };
 }
