@@ -64,6 +64,8 @@ describe('asymmetric shorthand values', () => {
     ['4-value margin', 'margin: 0 auto 0 8px'],
     ['4-value inset', 'inset: 0 20px 0 4px'],
     ['4-value border-width', 'border-width: 1px 2px 1px 4px'],
+    ['4-value border-color', 'border-color: red green blue yellow'],
+    ['4-value border-style', 'border-style: solid dashed solid dotted'],
     ['multi-value border-radius', 'border-radius: 8px 0 0 8px'],
     ['float: left', 'float: left'],
     ['float: right', 'float: right'],
@@ -71,6 +73,7 @@ describe('asymmetric shorthand values', () => {
     ['text-align: left', 'text-align: left'],
     ['text-align: right', 'text-align: right'],
     ['background-position with a left keyword', 'background-position: left 10px'],
+    ['transform-origin with a left keyword', 'transform-origin: left top'],
   ];
 
   it.each(offenders)('rejects %s', async (_label, declaration) => {
