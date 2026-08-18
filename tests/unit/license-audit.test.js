@@ -180,14 +180,40 @@ describe('collectPackages traversal', () => {
     expect(names, 'beta resolves from the hoisted location').toContain('beta');
   });
 
-  it('keeps two versions of one name as separate entries', async () => {
+  it('records both versions when two dependents resolve to different copies', async () => {
+    // Two requesters are essential here. With only one, nothing ever resolves to
+    // the hoisted copy, a single entry comes back, and a "no duplicate versions"
+    // assertion passes trivially — including under the name-only keying this
+    // test exists to catch. alpha carries a nested beta@1.0.0; gamma has no
+    // nested copy so it resolves to the hoisted beta@2.0.0. Both ship.
+    await writePkg('package.json', {
+      name: 'root',
+      dependencies: { alpha: '^1.0.0', gamma: '^1.0.0' },
+      devDependencies: { tooling: '^1.0.0' },
+    });
+    await writePkg('node_modules/gamma/package.json', {
+      name: 'gamma',
+      version: '1.0.0',
+      license: 'MIT',
+      dependencies: { beta: '^2.0.0' },
+    });
     await writePkg('node_modules/beta/package.json', { name: 'beta', version: '2.0.0', license: 'MIT' });
     await writePkg('node_modules/alpha/node_modules/beta/package.json', {
       name: 'beta',
       version: '1.0.0',
-      license: 'MIT',
+      license: 'GPL-3.0',
     });
-    const versions = (await collectPackages(dir)).filter((p) => p.name === 'beta').map((p) => p.version);
-    expect(new Set(versions).size).toBe(versions.length);
+
+    const packages = await collectPackages(dir);
+    expect(
+      packages
+        .filter((p) => p.name === 'beta')
+        .map((p) => p.version)
+        .sort(),
+    ).toEqual(['1.0.0', '2.0.0']);
+
+    const { ok, violations } = classify(packages);
+    expect(ok, 'the nested GPL copy must fail the audit').toBe(false);
+    expect(violations.map((v) => `${v.name}@${v.version}`)).toEqual(['beta@1.0.0']);
   });
 });
