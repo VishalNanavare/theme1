@@ -26,7 +26,19 @@ export default defineConfig(async () => {
     css: {
       devSourcemap: true,
       preprocessorOptions: {
-        scss: { loadPaths: [path.join(root, 'src/styles'), path.join(root, 'node_modules')] },
+        scss: {
+          loadPaths: [path.join(root, 'src/styles'), path.join(root, 'node_modules')],
+          // Vite 5 defaults to Dart Sass's legacy JS API, under which
+          // `loadPaths` is not honoured for nested `@use`/`@import` resolution
+          // (verified: a bare `@use` from a non-entry stylesheet fails with
+          // "Can't find stylesheet to import" even with its directory on
+          // loadPaths). The modern compiler API honours loadPaths correctly.
+          api: 'modern-compiler',
+          // Bootstrap's own Sass emits deprecation warnings (e.g. legacy
+          // color functions) that we do not own and cannot fix; quietDeps
+          // suppresses warnings from dependencies while still surfacing ours.
+          quietDeps: true,
+        },
       },
     },
     server: {
