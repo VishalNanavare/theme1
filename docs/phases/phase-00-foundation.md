@@ -1359,6 +1359,10 @@ git commit -m "feat(build): licence audit gate and third-party notices"
   - `BUDGETS = { css: 122880, js: 409600 }` (bytes, gzipped)
   - `gzipSize(buffer: Buffer) => Promise<number>`
   - `evaluate(entries: Array<{file, type: 'css'|'js', gzip: number}>, budgets?) => { ok: boolean, failures: Array<{file, type, gzip, budget}> }`
+  - `ASSET_GLOB` and `collectEntries(distDir) => Promise<Entry[]>`
+  - `run(root?, { log, error }?) => Promise<0 | 1>` — the exit code CI reads. **Zero assets is a failure**, so a skipped or misconfigured build cannot report green.
+
+Phase 14 extends this gate with browser-measured runtime budgets, so `evaluate` and `run` stay pure and independently callable.
 
 - [ ] **Step 1: Write the failing test**
 
