@@ -30,8 +30,7 @@
     "selector-class-pattern": "^t-[a-z0-9]+(-[a-z0-9]+)*(__[a-z0-9]+(-[a-z0-9]+)*)?(--[a-z0-9]+(-[a-z0-9]+)*)?$",
     "scss/dollar-variable-pattern": "^[a-z][a-z0-9-]*$",
     "no-descending-specificity": null,
-    "declaration-block-no-redundant-longhand-properties": null,
-    "declaration-block-single-line-max-declarations": null
+    "declaration-block-no-redundant-longhand-properties": null
   },
   "ignoreFiles": ["**/node_modules/**", "dist/**"]
 }
