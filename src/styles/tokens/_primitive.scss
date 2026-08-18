@@ -1,0 +1,254 @@
+// Tier 1 — primitive tokens.
+// Raw values with no meaning attached. Never referenced by component CSS;
+// only tier 2 (semantic) may point at these.
+
+$indigo: (
+  50: #eef1ff,
+  100: #dde3ff,
+  200: #c2ccff,
+  300: #9dadff,
+  400: #7688ff,
+  500: #3d5afe,
+  600: #2f45e0,
+  700: #2635b4,
+  800: #202c8e,
+  900: #1c2670,
+  950: #121843,
+);
+$slate: (
+  50: #f6f7f9,
+  100: #edeff2,
+  200: #e5e7eb,
+  300: #cdd2da,
+  400: #9ca3af,
+  500: #6b7280,
+  600: #4b5563,
+  700: #374151,
+  800: #1f2937,
+  900: #111827,
+  950: #0b0f17,
+);
+
+// Dedicated dark-chrome ramp. Deliberately cooler and flatter than $slate so
+// dark surfaces read as designed rather than as inverted light surfaces.
+$ink: (
+  50: #e8eaf0,
+  100: #ced3de,
+  200: #aab2c2,
+  300: #7f8798,
+  400: #59616f,
+  500: #3a4150,
+  600: #2a2f3a,
+  700: #1e212a,
+  800: #16181d,
+  900: #0f1117,
+  950: #080a0e,
+);
+$emerald: (
+  50: #ecfdf5,
+  100: #d1fae5,
+  200: #a7f3d0,
+  300: #6ee7b7,
+  400: #34d399,
+  500: #10b981,
+  600: #059669,
+  700: #047857,
+  800: #065f46,
+  900: #064e3b,
+  950: #022c22,
+);
+$amber: (
+  50: #fffbeb,
+  100: #fef3c7,
+  200: #fde68a,
+  300: #fcd34d,
+  400: #fbbf24,
+  500: #f59e0b,
+  600: #d97706,
+  700: #b45309,
+  800: #92400e,
+  900: #78350f,
+  950: #451a03,
+);
+$red: (
+  50: #fef2f2,
+  100: #fee2e2,
+  200: #fecaca,
+  300: #fca5a5,
+  400: #f87171,
+  500: #ef4444,
+  600: #dc2626,
+  700: #b91c1c,
+  800: #991b1b,
+  900: #7f1d1d,
+  950: #450a0a,
+);
+$cyan: (
+  50: #ecfeff,
+  100: #cffafe,
+  200: #a5f3fc,
+  300: #67e8f9,
+  400: #22d3ee,
+  500: #06b6d4,
+  600: #0891b2,
+  700: #0e7490,
+  800: #155e75,
+  900: #164e63,
+  950: #083344,
+);
+$ramps: (
+  'indigo': $indigo,
+  'slate': $slate,
+  'ink': $ink,
+  'emerald': $emerald,
+  'amber': $amber,
+  'red': $red,
+  'cyan': $cyan,
+);
+
+// 4px base spacing scale.
+$space: (
+  0: 0,
+  1: 0.25rem,
+  2: 0.5rem,
+  3: 0.75rem,
+  4: 1rem,
+  5: 1.25rem,
+  6: 1.5rem,
+  8: 2rem,
+  10: 2.5rem,
+  12: 3rem,
+  16: 4rem,
+  20: 5rem,
+  24: 6rem,
+);
+
+// 1.200 minor third, anchored at 14px body.
+$size: (
+  'xs': 0.6875rem,
+  'sm': 0.75rem,
+  'base': 0.875rem,
+  'md': 1rem,
+  'lg': 1.125rem,
+  'xl': 1.25rem,
+  '2xl': 1.5rem,
+  '3xl': 1.75rem,
+  '4xl': 2.125rem,
+  '5xl': 2.5rem,
+  '6xl': 3rem,
+);
+$radius: (
+  'none': 0,
+  'sm': 0.25rem,
+  'md': 0.5rem,
+  'lg': 0.75rem,
+  'xl': 1rem,
+  '2xl': 1.5rem,
+  'full': 9999px,
+);
+$shadow: (
+  0: none,
+  1: (
+    0 1px 2px rgb(16 24 40 / 6%),
+  ),
+  2: (
+    0 1px 3px rgb(16 24 40 / 8%),
+    0 1px 2px rgb(16 24 40 / 4%),
+  ),
+  3: (
+    0 4px 8px -2px rgb(16 24 40 / 8%),
+    0 2px 4px -2px rgb(16 24 40 / 4%),
+  ),
+  4: (
+    0 12px 16px -4px rgb(16 24 40 / 8%),
+    0 4px 6px -2px rgb(16 24 40 / 3%),
+  ),
+  5: (
+    0 20px 24px -4px rgb(16 24 40 / 10%),
+    0 8px 8px -4px rgb(16 24 40 / 4%),
+  ),
+);
+$z: (
+  10: 100,
+  20: 200,
+  30: 300,
+  40: 400,
+  50: 500,
+  60: 600,
+  70: 700,
+);
+$weight: (
+  400: 400,
+  500: 500,
+  600: 600,
+  700: 700,
+);
+$leading: (
+  'tight': 1.2,
+  'snug': 1.35,
+  'normal': 1.5,
+  'relaxed': 1.7,
+);
+$tracking: (
+  'tight': -0.01em,
+  'normal': 0,
+  'wide': 0.02em,
+);
+$duration: (
+  'fast': 120ms,
+  'base': 200ms,
+  'slow': 320ms,
+);
+$ease: (
+  'standard': cubic-bezier(0.2, 0, 0, 1),
+  'decelerate': cubic-bezier(0, 0, 0, 1),
+  'accelerate': cubic-bezier(0.3, 0, 1, 1),
+);
+
+:root {
+  @each $name, $ramp in $ramps {
+    @each $step, $value in $ramp {
+      --t-#{$name}-#{$step}: #{$value};
+    }
+  }
+
+  @each $step, $value in $space {
+    --t-space-#{$step}: #{$value};
+  }
+
+  @each $key, $value in $size {
+    --t-size-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $radius {
+    --t-radius-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $shadow {
+    --t-shadow-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $z {
+    --t-z-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $weight {
+    --t-weight-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $leading {
+    --t-leading-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $tracking {
+    --t-tracking-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $duration {
+    --t-duration-#{$key}: #{$value};
+  }
+
+  @each $key, $value in $ease {
+    --t-ease-#{$key}: #{$value};
+  }
+}
