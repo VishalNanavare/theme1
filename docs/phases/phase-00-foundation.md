@@ -52,6 +52,7 @@ The spec's §4.1 folder tree groups `src/pages/` into subfolders. **This plan fl
 | `src/scripts/main.js` | Shared JS entry (populated in Phase 02) |
 | `.github/workflows/ci.yml` | lint → build → test → audit → budgets |
 | `.gitignore` | `node_modules`, `dist`, generated `src/*.html` |
+| `.gitattributes` | Pins the working tree to LF so Prettier agrees on Windows and in CI |
 
 ---
 
@@ -170,6 +171,25 @@ dist/
 coverage/
 *.log
 .DS_Store
+```
+
+- [ ] **Step 4b: Create `.gitattributes`**
+
+Without this, Git's `core.autocrlf=true` (the Windows default) checks committed LF out as CRLF, Prettier's default `endOfLine: "lf"` then fails on every file, and `npm run lint` passes in CI while failing on a developer's machine — or the reverse. Pinning the working tree to LF makes both agree.
+
+```gitattributes
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.woff binary
+*.ico binary
+```
+
+After creating it, renormalize anything already committed:
+
+```bash
+git add --renormalize .
 ```
 
 - [ ] **Step 5: Create `vitest.config.js`**
