@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { gzipSize, evaluate, BUDGETS } from '../../scripts/check-budgets.mjs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { gzipSize, evaluate, run, BUDGETS } from '../../scripts/check-budgets.mjs';
 
 describe('BUDGETS', () => {
   it('matches the spec: 120 KB css, 400 KB js', () => {
@@ -38,5 +42,67 @@ describe('evaluate', () => {
 
   it('accepts overridden budgets', () => {
     expect(evaluate([{ file: 'a.js', type: 'js', gzip: 500 }], { js: 100, css: 100 }).ok).toBe(false);
+  });
+});
+
+/**
+ * CI reads only this script's exit code, so the exit paths need their own
+ * coverage — testing `evaluate` alone leaves the part CI actually depends on
+ * unverified.
+ */
+describe('run', () => {
+  let dir;
+  const silent = { log() {}, error() {} };
+
+  const writeAsset = async (name, contents) => {
+    const target = path.join(dir, 'dist/assets', name);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, contents);
+  };
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'theme1-budget-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('fails when dist does not exist, so a skipped build cannot read as green', async () => {
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('fails when dist/assets is empty', async () => {
+    await mkdir(path.join(dir, 'dist/assets'), { recursive: true });
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('says why it failed when nothing matched', async () => {
+    const errors = [];
+    await run(dir, { log() {}, error: (m) => errors.push(m) });
+    expect(errors.join(' ')).toMatch(/no assets matched/i);
+  });
+
+  it('passes for assets within budget', async () => {
+    await writeAsset('index-abc123.css', 'body{color:red}');
+    await writeAsset('index-def456.js', 'export const a = 1;');
+    expect(await run(dir, silent)).toBe(0);
+  });
+
+  it('fails for an oversized asset', async () => {
+    // Random bytes do not compress, so this really does exceed the budget.
+    await writeAsset('big-abc123.css', randomBytes(200 * 1024));
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('counts a .mjs chunk, which a {css,js} glob would silently drop', async () => {
+    await writeAsset('worker-abc123.mjs', randomBytes(500 * 1024));
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('ignores source maps, which are not shipped to users', async () => {
+    await writeAsset('index-abc123.js', 'export const a = 1;');
+    await writeAsset('index-abc123.js.map', randomBytes(600 * 1024));
+    expect(await run(dir, silent)).toBe(0);
   });
 });

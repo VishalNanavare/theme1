@@ -19,28 +19,57 @@ export function evaluate(entries, budgets = BUDGETS) {
   return { ok: failures.length === 0, failures };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const root = process.cwd();
-  const files = await fg('assets/**/*.{css,js}', { cwd: path.join(root, 'dist') });
+/**
+ * Every script-like extension Rollup can emit. A glob of just {css,js} would
+ * silently drop a `.mjs` chunk — and an asset the gate cannot see is an asset
+ * with no budget at all.
+ */
+export const ASSET_GLOB = 'assets/**/*.{css,js,mjs,cjs}';
 
+export async function collectEntries(distDir) {
+  const files = await fg(ASSET_GLOB, { cwd: distDir });
   const entries = [];
   for (const file of files) {
-    const buf = await readFile(path.join(root, 'dist', file));
+    const buf = await readFile(path.join(distDir, file));
     entries.push({ file, type: file.endsWith('.css') ? 'css' : 'js', gzip: await gzipSize(buf) });
+  }
+  return entries.sort((a, b) => b.gzip - a.gzip);
+}
+
+/**
+ * Returns a process exit code. Separated from the CLI block so the failure
+ * paths — including the empty-build one — are directly testable.
+ *
+ * Finding no assets is a FAILURE, not a pass. CI reads only this exit code, so
+ * a skipped or misconfigured build must not be able to report green.
+ */
+export async function run(root = process.cwd(), { log = console.log, error = console.error } = {}) {
+  const distDir = path.join(root, 'dist');
+  const entries = await collectEntries(distDir);
+
+  if (entries.length === 0) {
+    error(`Budget check FAILED: no assets matched ${ASSET_GLOB} under ${distDir}.`);
+    error('Either the build did not run, or its output path changed.');
+    return 1;
+  }
+
+  for (const e of entries) {
+    log(`${(e.gzip / 1024).toFixed(1).padStart(8)} KB  ${e.file}`);
   }
 
   const { ok, failures } = evaluate(entries);
-
-  for (const e of entries.sort((a, b) => b.gzip - a.gzip)) {
-    console.log(`${(e.gzip / 1024).toFixed(1).padStart(8)} KB  ${e.file}`);
-  }
-
   if (!ok) {
-    console.error('\nBudget check FAILED:');
+    error('\nBudget check FAILED:');
     for (const f of failures) {
-      console.error(`  ${f.file}: ${(f.gzip / 1024).toFixed(1)} KB gzipped exceeds ${(f.budget / 1024).toFixed(0)} KB`);
+      error(`  ${f.file}: ${(f.gzip / 1024).toFixed(1)} KB gzipped exceeds ${(f.budget / 1024).toFixed(0)} KB`);
     }
-    process.exit(1);
+    return 1;
   }
-  console.log(`\nBudget check passed: ${entries.length} assets within budget.`);
+
+  log(`\nBudget check passed: ${entries.length} assets within budget.`);
+  return 0;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(await run());
 }
