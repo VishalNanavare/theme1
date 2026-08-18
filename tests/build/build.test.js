@@ -16,9 +16,9 @@ beforeAll(async () => {
 }, 180_000);
 
 describe('vite build', () => {
-  it('emits index.html at the top level of dist', () => {
+  it('emits index.html at the top level of dist', async () => {
     expect(existsSync(path.join(rootDir, 'dist/index.html'))).toBe(true);
-    expect(existsSync(path.join(rootDir, 'dist/.gen'))).toBe(false);
+    expect(await fg('**/index.html', { cwd: path.join(rootDir, 'dist') })).toEqual(['index.html']);
   });
 
   it('rewrites the scss link to a hashed css asset', () => {

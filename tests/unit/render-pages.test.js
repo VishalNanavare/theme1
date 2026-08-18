@@ -41,7 +41,7 @@ describe('renderAll', () => {
   it('renders every page to flat HTML in the output directory', async () => {
     const written = await renderAll({ root: dir });
     expect(written).toHaveLength(1);
-    expect(written[0]).toBe(path.join(dir, 'src/.gen/index.html'));
+    expect(written[0]).toBe(path.join(dir, 'src/index.html'));
 
     const html = await readFile(written[0], 'utf8');
     expect(html).toContain('<h1>theme1</h1>');

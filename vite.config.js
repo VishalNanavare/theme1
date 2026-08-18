@@ -3,22 +3,19 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import fg from 'fast-glob';
 import pagesPlugin from './scripts/vite-plugin-pages.mjs';
-// See scripts/vite-plugin-pages.mjs for why this is a computed dynamic import
-// rather than a static one: render-pages.mjs's CLI shebang is incompatible with
-// how Vite's config-loader bundles static relative imports via esbuild.
-const { renderAll, OUT_DIR } = await import(new URL('./scripts/render-pages.mjs', import.meta.url).href);
+import { renderAll, OUT_DIR } from './scripts/render-pages.mjs';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const genDir = path.join(root, OUT_DIR);
+const srcDir = path.join(root, OUT_DIR);
 
 export default defineConfig(async () => {
   // Render once up front so the input glob below sees every page.
   await renderAll({ root });
 
-  const inputs = await fg('*.html', { cwd: genDir, absolute: true });
+  const inputs = await fg('*.html', { cwd: srcDir, absolute: true });
 
   return {
-    root: genDir,
+    root: srcDir,
     base: '/',
     publicDir: path.join(root, 'src/public'),
     appType: 'mpa',

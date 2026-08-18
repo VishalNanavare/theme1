@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -7,7 +6,7 @@ import fg from 'fast-glob';
 
 export const SRC = 'src';
 export const PAGES_DIR = 'src/pages';
-export const OUT_DIR = 'src/.gen';
+export const OUT_DIR = 'src';
 export const DATA_DIR = 'src/data';
 
 /** Build a Nunjucks environment rooted at the given search paths. */
