@@ -712,6 +712,56 @@ describe('stylelint config', () => {
     expect(warnings.map((w) => `${w.rule}: ${w.text}`)).toEqual([]);
   });
 });
+
+/**
+ * A property-level ban cannot see inside a shorthand, so `padding: 0 20px 0 4px`
+ * would slip through with exactly the RTL breakage `padding-left` was banned for.
+ * These value-level rules reject only the forms that actually encode left/right
+ * asymmetry: the 4-value box shorthands, multi-value border-radius, and the
+ * directional keywords. 1-, 2- and 3-value box shorthands are symmetric on the
+ * inline axis and stay legal, so the rule adds no friction to ordinary CSS.
+ */
+describe('asymmetric shorthand values', () => {
+  const offenders = [
+    ['4-value padding', 'padding: 0 20px 0 4px'],
+    ['4-value margin', 'margin: 0 auto 0 8px'],
+    ['4-value inset', 'inset: 0 20px 0 4px'],
+    ['4-value border-width', 'border-width: 1px 2px 1px 4px'],
+    ['multi-value border-radius', 'border-radius: 8px 0 0 8px'],
+    ['float: left', 'float: left'],
+    ['float: right', 'float: right'],
+    ['clear: right', 'clear: right'],
+    ['text-align: left', 'text-align: left'],
+    ['text-align: right', 'text-align: right'],
+    ['background-position with a left keyword', 'background-position: left 10px'],
+  ];
+
+  it.each(offenders)('rejects %s', async (_label, declaration) => {
+    const warnings = await lint(rule(declaration));
+    expect(warnings.map((w) => w.rule)).toContain('declaration-property-value-disallowed-list');
+  });
+
+  const allowed = [
+    ['1-value padding', 'padding: 1rem'],
+    ['2-value padding — block then inline, already symmetric', 'padding: 1rem 2rem'],
+    ['3-value padding — inline value is shared', 'padding: 1rem 2rem 3rem'],
+    ['2-value margin with auto', 'margin: 0 auto'],
+    ['single-value inset', 'inset: 0'],
+    ['uniform border-radius', 'border-radius: 8px'],
+    ['logical float', 'float: inline-start'],
+    ['logical text-align', 'text-align: end'],
+  ];
+
+  it.each(allowed)('accepts %s', async (_label, declaration) => {
+    const warnings = await lint(rule(declaration));
+    expect(warnings.map((w) => `${w.rule}: ${w.text}`)).toEqual([]);
+  });
+
+  it('names the logical replacement in the message', async () => {
+    const warnings = await lint(rule('padding: 0 20px 0 4px'));
+    expect(warnings.map((w) => w.text).join(' ')).toMatch(/padding-inline/);
+  });
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -750,6 +800,25 @@ Expected: FAIL — `No configuration provided` (the config file does not exist).
         "message": "Use the logical property instead (margin-inline-start, padding-inline-end, inset-inline-start, border-start-start-radius, …). Physical left/right properties break RTL."
       }
     ],
+    "declaration-property-value-disallowed-list": [
+      {
+        "margin": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "padding": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "inset": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-width": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-color": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-style": ["/^\\s*\\S+(\\s+\\S+){3}\\s*$/"],
+        "border-radius": ["/\\s/"],
+        "float": ["left", "right"],
+        "clear": ["left", "right"],
+        "text-align": ["left", "right"],
+        "background-position": ["/\\bleft\\b|\\bright\\b/"],
+        "transform-origin": ["/\\bleft\\b|\\bright\\b/"]
+      },
+      {
+        "message": "This value encodes left/right asymmetry and will not mirror in RTL. Use the logical form: padding-inline / margin-inline / inset-inline, the border-*-*-radius longhands, float: inline-start, or text-align: start|end."
+      }
+    ],
     "custom-property-pattern": "^t-[a-z0-9]+(-[a-z0-9]+)*$",
     "selector-class-pattern": "^t-[a-z0-9]+(-[a-z0-9]+)*(__[a-z0-9]+(-[a-z0-9]+)*)?(--[a-z0-9]+(-[a-z0-9]+)*)?$",
     "scss/dollar-variable-pattern": "^[a-z][a-z0-9-]*$",
@@ -763,7 +832,9 @@ Expected: FAIL — `No configuration provided` (the config file does not exist).
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd theme1 && npx vitest run tests/lint/stylelint-rules.test.js`
-Expected: PASS — 6 tests (the bare-offset case runs twice via `it.each`).
+Expected: PASS — 26 tests (6 property-level, 11 rejected values, 8 accepted values, 1 message check).
+
+**Known limit, accepted deliberately:** the 4-value regex counts whitespace-separated tokens, so `margin: calc(1rem + 2px) 0 0 0` reads as six tokens and slips through. Tightening it to "four or more" would false-positive on the legal `margin: calc(1rem + 2px) auto`. Precision was chosen over completeness; Phase 13's RTL pass is the backstop.
 
 If a warning from an unrelated rule appears, fix the **test CSS formatting**. Never disable the rule: `stylelint-config-standard`'s rules are the house style for the whole project, and relaxing one to accommodate a test string weakens every stylesheet Phases 01–12 will write.
 
