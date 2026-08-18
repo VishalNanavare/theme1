@@ -236,7 +236,9 @@ git commit -m "chore: scaffold theme1 package with vitest"
 **Interfaces:**
 - Consumes: Task 1's npm scripts.
 - Produces:
-  - `createEnv(searchPaths?: string[]) => nunjucks.Environment`
+  - 
+  - , 
+  -  — the exit code CI reads. **Zero assets is a failure**, so a skipped build cannot report green.`createEnv(searchPaths?: string[]) => nunjucks.Environment`
   - `loadData(dataDir: string) => Promise<Record<string, unknown>>`
   - `renderAll(opts?: { root?: string, pagesDir?: string, outDir?: string, dataDir?: string }) => Promise<string[]>` — returns absolute paths written
   - Constants `SRC = 'src'`, `PAGES_DIR = 'src/pages'`, `OUT_DIR = 'src'`, `DATA_DIR = 'src/data'`
@@ -1363,8 +1365,12 @@ git commit -m "feat(build): licence audit gate and third-party notices"
 Create `theme1/tests/unit/check-budgets.test.js`:
 
 ```js
-import { describe, it, expect } from 'vitest';
-import { gzipSize, evaluate, BUDGETS } from '../../scripts/check-budgets.mjs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { gzipSize, evaluate, run, BUDGETS } from '../../scripts/check-budgets.mjs';
 
 describe('BUDGETS', () => {
   it('matches the spec: 120 KB css, 400 KB js', () => {
@@ -1405,6 +1411,68 @@ describe('evaluate', () => {
     expect(evaluate([{ file: 'a.js', type: 'js', gzip: 500 }], { js: 100, css: 100 }).ok).toBe(false);
   });
 });
+
+/**
+ * CI reads only this script's exit code, so the exit paths need their own
+ * coverage — testing `evaluate` alone leaves the part CI actually depends on
+ * unverified.
+ */
+describe('run', () => {
+  let dir;
+  const silent = { log() {}, error() {} };
+
+  const writeAsset = async (name, contents) => {
+    const target = path.join(dir, 'dist/assets', name);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, contents);
+  };
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'theme1-budget-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('fails when dist does not exist, so a skipped build cannot read as green', async () => {
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('fails when dist/assets is empty', async () => {
+    await mkdir(path.join(dir, 'dist/assets'), { recursive: true });
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('says why it failed when nothing matched', async () => {
+    const errors = [];
+    await run(dir, { log() {}, error: (m) => errors.push(m) });
+    expect(errors.join(' ')).toMatch(/no assets matched/i);
+  });
+
+  it('passes for assets within budget', async () => {
+    await writeAsset('index-abc123.css', 'body{color:red}');
+    await writeAsset('index-def456.js', 'export const a = 1;');
+    expect(await run(dir, silent)).toBe(0);
+  });
+
+  it('fails for an oversized asset', async () => {
+    // Random bytes do not compress, so this really does exceed the budget.
+    await writeAsset('big-abc123.css', randomBytes(200 * 1024));
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('counts a .mjs chunk, which a {css,js} glob would silently drop', async () => {
+    await writeAsset('worker-abc123.mjs', randomBytes(500 * 1024));
+    expect(await run(dir, silent)).toBe(1);
+  });
+
+  it('ignores source maps, which are not shipped to users', async () => {
+    await writeAsset('index-abc123.js', 'export const a = 1;');
+    await writeAsset('index-abc123.js.map', randomBytes(600 * 1024));
+    expect(await run(dir, silent)).toBe(0);
+  });
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -1432,43 +1500,70 @@ export async function gzipSize(buffer) {
 }
 
 export function evaluate(entries, budgets = BUDGETS) {
-  const failures = entries
-    .filter((e) => e.gzip > budgets[e.type])
-    .map((e) => ({ ...e, budget: budgets[e.type] }));
+  const failures = entries.filter((e) => e.gzip > budgets[e.type]).map((e) => ({ ...e, budget: budgets[e.type] }));
   return { ok: failures.length === 0, failures };
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const root = process.cwd();
-  const files = await fg('assets/**/*.{css,js}', { cwd: path.join(root, 'dist') });
+/**
+ * Every script-like extension Rollup can emit. A glob of just {css,js} would
+ * silently drop a `.mjs` chunk — and an asset the gate cannot see is an asset
+ * with no budget at all.
+ */
+export const ASSET_GLOB = 'assets/**/*.{css,js,mjs,cjs}';
 
+export async function collectEntries(distDir) {
+  const files = await fg(ASSET_GLOB, { cwd: distDir });
   const entries = [];
   for (const file of files) {
-    const buf = await readFile(path.join(root, 'dist', file));
+    const buf = await readFile(path.join(distDir, file));
     entries.push({ file, type: file.endsWith('.css') ? 'css' : 'js', gzip: await gzipSize(buf) });
+  }
+  return entries.sort((a, b) => b.gzip - a.gzip);
+}
+
+/**
+ * Returns a process exit code. Separated from the CLI block so the failure
+ * paths — including the empty-build one — are directly testable.
+ *
+ * Finding no assets is a FAILURE, not a pass. CI reads only this exit code, so
+ * a skipped or misconfigured build must not be able to report green.
+ */
+export async function run(root = process.cwd(), { log = console.log, error = console.error } = {}) {
+  const distDir = path.join(root, 'dist');
+  const entries = await collectEntries(distDir);
+
+  if (entries.length === 0) {
+    error(`Budget check FAILED: no assets matched ${ASSET_GLOB} under ${distDir}.`);
+    error('Either the build did not run, or its output path changed.');
+    return 1;
+  }
+
+  for (const e of entries) {
+    log(`${(e.gzip / 1024).toFixed(1).padStart(8)} KB  ${e.file}`);
   }
 
   const { ok, failures } = evaluate(entries);
-
-  for (const e of entries.sort((a, b) => b.gzip - a.gzip)) {
-    console.log(`${(e.gzip / 1024).toFixed(1).padStart(8)} KB  ${e.file}`);
-  }
-
   if (!ok) {
-    console.error('\nBudget check FAILED:');
+    error('\nBudget check FAILED:');
     for (const f of failures) {
-      console.error(`  ${f.file}: ${(f.gzip / 1024).toFixed(1)} KB gzipped exceeds ${(f.budget / 1024).toFixed(0)} KB`);
+      error(`  ${f.file}: ${(f.gzip / 1024).toFixed(1)} KB gzipped exceeds ${(f.budget / 1024).toFixed(0)} KB`);
     }
-    process.exit(1);
+    return 1;
   }
-  console.log(`\nBudget check passed: ${entries.length} assets within budget.`);
+
+  log(`\nBudget check passed: ${entries.length} assets within budget.`);
+  return 0;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(await run());
 }
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd theme1 && npx vitest run tests/unit/check-budgets.test.js`
-Expected: PASS — 6 tests.
+Expected: PASS — 13 tests (6 pure, 7 covering the exit paths CI depends on).
 
 - [ ] **Step 5: Run against the real build**
 
