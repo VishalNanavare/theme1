@@ -8,6 +8,13 @@
 
 **Tech Stack:** Dart Sass · CSS custom properties · Vitest · Inter variable font (SIL OFL)
 
+## Sass module facts, verified in Phase 00 — read before Task 7
+
+- **Bootstrap 5.3 does not support Sass `@use`.** Its partials rely on `@import`'s global scope. `src/styles/bootstrap/_config.scss` must therefore use `@import` for Bootstrap's own files. Dart Sass 3.0 removes `@import`, so this is a known, dated dependency: record it in `docs/architecture.md` rather than discovering it later.
+- **Do not `@use` our own Bootstrap wrapper from `theme1.scss`.** `@use` namespaces what it loads, so Bootstrap's variables and mixins would not reach any other partial. Load `bootstrap/config` with `@import` too, and reserve `@use` for our own token and component partials, which are written to support it.
+- **Vite is configured with `api: 'modern-compiler'` and `quietDeps: true`** (Phase 00 final-review fix). Without the modern API, `loadPaths` silently does nothing and a bare `@use 'tokens/color'` fails to resolve. `quietDeps` suppresses Bootstrap's own deprecation warnings while still surfacing ours.
+- **Stylelint's `custom-property-pattern` and `selector-class-pattern` are relaxed for `src/styles/bootstrap/**` only** (Phase 00 final-review fix), because that layer legitimately writes `--bs-*` and restyles `.btn`. Everywhere else the `t-`/`--t-` prefixes remain enforced.
+
 ## Global Constraints
 
 - **Node** ≥ 20.11.0. **npm** ≥ 10.
@@ -1648,7 +1655,7 @@ $grid-gutter-width: 1.5rem;
 ```scss
 // Order matters: Bootstrap's reboot and utilities first, then our tokens
 // (which win because they are declared later), then our base layer.
-@use 'bootstrap/config';
+@import 'bootstrap/config';
 @use 'tokens';
 @use 'bootstrap/bridge';
 @use 'base/typography';
