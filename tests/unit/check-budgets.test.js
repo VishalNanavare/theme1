@@ -43,6 +43,13 @@ describe('evaluate', () => {
   it('accepts overridden budgets', () => {
     expect(evaluate([{ file: 'a.js', type: 'js', gzip: 500 }], { js: 100, css: 100 }).ok).toBe(false);
   });
+
+  it('throws on an asset type missing from the budgets map, instead of waving it through', () => {
+    // `e.gzip > budgets[e.type]` is `e.gzip > undefined`, which is always
+    // false — a type absent from an override would otherwise pass silently
+    // no matter how large the asset is.
+    expect(() => evaluate([{ file: 'a.wasm', type: 'wasm', gzip: 1 }], { css: 100, js: 100 })).toThrow(/wasm/);
+  });
 });
 
 /**

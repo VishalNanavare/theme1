@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -7,6 +7,7 @@ import {
   classify,
   renderNotices,
   collectPackages,
+  run,
   RUNTIME_ALLOWED,
   DEV_ALLOWED,
 } from '../../scripts/license-audit.mjs';
@@ -27,6 +28,18 @@ describe('normalizeLicense', () => {
 
   it('keeps SPDX expressions intact so they can be judged as a whole', () => {
     expect(normalizeLicense('(MIT OR GPL-2.0)')).toBe('(MIT OR GPL-2.0)');
+  });
+
+  it('unwraps a single-entry legacy licenses array', () => {
+    expect(normalizeLicense([{ type: 'MIT' }])).toBe('MIT');
+  });
+
+  it('synthesises a compound expression from a multi-entry licenses array — the same ambiguity as (A OR B)', () => {
+    expect(normalizeLicense([{ type: 'MIT' }, { type: 'GPL-3.0' }])).toBe('(MIT OR GPL-3.0)');
+  });
+
+  it('reports UNKNOWN for an empty licenses array', () => {
+    expect(normalizeLicense([])).toBe('UNKNOWN');
   });
 });
 
@@ -215,5 +228,119 @@ describe('collectPackages traversal', () => {
     const { ok, violations } = classify(packages);
     expect(ok, 'the nested GPL copy must fail the audit').toBe(false);
     expect(violations.map((v) => `${v.name}@${v.version}`)).toEqual(['beta@1.0.0']);
+  });
+
+  it('walks a non-optional peer dependency the same way as a regular dependency', async () => {
+    await writePkg('node_modules/alpha/package.json', {
+      name: 'alpha',
+      version: '1.0.0',
+      license: 'MIT',
+      peerDependencies: { peerlib: '^1.0.0' },
+    });
+    await writePkg('node_modules/peerlib/package.json', { name: 'peerlib', version: '1.0.0', license: 'MIT' });
+
+    const runtime = (await collectPackages(dir)).filter((p) => p.scope === 'runtime').map((p) => p.name);
+    expect(runtime).toContain('peerlib');
+  });
+
+  it('skips a peer dependency marked optional in peerDependenciesMeta', async () => {
+    await writePkg('node_modules/alpha/package.json', {
+      name: 'alpha',
+      version: '1.0.0',
+      license: 'MIT',
+      peerDependencies: { peerlib: '^1.0.0' },
+      peerDependenciesMeta: { peerlib: { optional: true } },
+    });
+    await writePkg('node_modules/peerlib/package.json', { name: 'peerlib', version: '1.0.0', license: 'MIT' });
+
+    const names = (await collectPackages(dir)).map((p) => p.name);
+    expect(names, 'an optional peer is not guaranteed to be installed and must not be audited').not.toContain(
+      'peerlib',
+    );
+  });
+
+  it('fails the audit on a required peer dependency with a disallowed licence', async () => {
+    await writePkg('node_modules/alpha/package.json', {
+      name: 'alpha',
+      version: '1.0.0',
+      license: 'MIT',
+      peerDependencies: { peerlib: '^1.0.0' },
+    });
+    await writePkg('node_modules/peerlib/package.json', { name: 'peerlib', version: '1.0.0', license: 'GPL-3.0' });
+
+    expect(classify(await collectPackages(dir)).ok).toBe(false);
+  });
+
+  it('rejects a legacy multi-entry licenses array as the same ambiguity as a compound SPDX expression', async () => {
+    await writePkg('node_modules/alpha/package.json', {
+      name: 'alpha',
+      version: '1.0.0',
+      licenses: [{ type: 'MIT' }, { type: 'GPL-3.0' }],
+    });
+
+    const packages = await collectPackages(dir);
+    const alpha = packages.find((p) => p.name === 'alpha');
+    expect(alpha.license).toBe('(MIT OR GPL-3.0)');
+    expect(classify(packages).ok).toBe(false);
+  });
+});
+
+/**
+ * CI reads only this script's exit code, so — matching the pattern in
+ * tests/unit/check-budgets.test.js — the exit paths get their own coverage
+ * rather than relying on `classify` and `collectPackages` alone.
+ */
+describe('run', () => {
+  let dir;
+  const silent = { log() {}, error() {} };
+
+  const writePkg = async (relative, manifest) => {
+    const target = path.join(dir, relative);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, JSON.stringify(manifest), 'utf8');
+  };
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), 'theme1-audit-run-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('passes and writes the notices file when every licence is permitted', async () => {
+    await writePkg('package.json', { name: 'root', dependencies: { alpha: '^1.0.0' } });
+    await writePkg('node_modules/alpha/package.json', { name: 'alpha', version: '1.0.0', license: 'MIT' });
+
+    expect(await run(dir, silent)).toBe(0);
+    const notices = await readFile(path.join(dir, 'THIRD-PARTY-NOTICES.md'), 'utf8');
+    expect(notices).toContain('alpha');
+  });
+
+  it('fails, but still writes the notices file, when a licence is not permitted', async () => {
+    await writePkg('package.json', { name: 'root', dependencies: { bad: '^1.0.0' } });
+    await writePkg('node_modules/bad/package.json', { name: 'bad', version: '1.0.0', license: 'GPL-3.0' });
+
+    expect(await run(dir, silent)).toBe(1);
+    const notices = await readFile(path.join(dir, 'THIRD-PARTY-NOTICES.md'), 'utf8');
+    expect(notices, 'the notices file must reflect reality even when the audit fails').toContain('bad');
+  });
+
+  it('names each violation on stderr', async () => {
+    await writePkg('package.json', { name: 'root', dependencies: { bad: '^1.0.0' } });
+    await writePkg('node_modules/bad/package.json', { name: 'bad', version: '1.0.0', license: 'GPL-3.0' });
+
+    const errors = [];
+    await run(dir, { log() {}, error: (m) => errors.push(m) });
+    expect(errors.join(' ')).toContain('bad@1.0.0');
+  });
+
+  it('says how many packages passed on success', async () => {
+    await writePkg('package.json', { name: 'root', dependencies: { alpha: '^1.0.0' } });
+    await writePkg('node_modules/alpha/package.json', { name: 'alpha', version: '1.0.0', license: 'MIT' });
+
+    const logs = [];
+    await run(dir, { log: (m) => logs.push(m), error() {} });
+    expect(logs.join(' ')).toMatch(/1 packages, all permitted/);
   });
 });

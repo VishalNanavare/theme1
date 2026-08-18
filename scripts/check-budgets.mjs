@@ -15,7 +15,17 @@ export async function gzipSize(buffer) {
 }
 
 export function evaluate(entries, budgets = BUDGETS) {
-  const failures = entries.filter((e) => e.gzip > budgets[e.type]).map((e) => ({ ...e, budget: budgets[e.type] }));
+  const failures = entries
+    .filter((e) => {
+      // A type absent from `budgets` makes `e.gzip > undefined` false —
+      // silently waving the asset through with no budget at all. That is a
+      // hole in the gate, not a pass, so it must fail loudly instead.
+      if (!(e.type in budgets)) {
+        throw new Error(`No budget configured for asset type "${e.type}" (${e.file}).`);
+      }
+      return e.gzip > budgets[e.type];
+    })
+    .map((e) => ({ ...e, budget: budgets[e.type] }));
   return { ok: failures.length === 0, failures };
 }
 

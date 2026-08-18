@@ -23,6 +23,19 @@ export default [
           message: 'Use textContent, or a sanitised template helper. innerHTML with dynamic data is banned.',
         },
         { property: 'outerHTML', message: 'Use DOM construction instead of outerHTML assignment.' },
+        {
+          property: 'insertAdjacentHTML',
+          message: 'Use DOM construction (insertAdjacentText, createElement) instead. Raw HTML injection is banned.',
+        },
+        {
+          object: 'document',
+          property: 'write',
+          message: 'document.write is banned. Use DOM construction instead.',
+        },
+        {
+          property: 'setHTMLUnsafe',
+          message: 'setHTMLUnsafe is banned — it is unsanitised HTML injection. Use DOM construction instead.',
+        },
       ],
       'no-restricted-globals': [
         'error',
