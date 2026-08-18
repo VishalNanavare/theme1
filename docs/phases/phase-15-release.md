@@ -353,7 +353,7 @@ git commit -m "chore(release): consolidated release gate and changelog"
 - [ ] **Step 1: Run every gate one final time from a clean checkout**
 
 ```bash
-cd theme1 && rm -rf node_modules dist dist-starter dist-tokens src/.gen src/generated
+cd theme1 && rm -rf node_modules dist dist-starter dist-tokens src/*.html src/generated
 npm ci
 npm run release:check
 ```

@@ -146,7 +146,6 @@ Expected: FAIL — module not found.
 Run: `cd theme1 && npm install --save-dev feather-icons`
 
 ```js
-#!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';

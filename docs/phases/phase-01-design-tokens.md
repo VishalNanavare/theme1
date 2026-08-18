@@ -1761,7 +1761,6 @@ Expected: FAIL — module not found.
 - [ ] **Step 3: Write `scripts/token-export.mjs`**
 
 ```js
-#!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';

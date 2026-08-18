@@ -485,7 +485,7 @@ import path from 'node:path';
 const rootDir = fileURLToPath(new URL('../..', import.meta.url));
 
 async function sourceFiles(pattern) {
-  return fg(pattern, { cwd: rootDir, absolute: true, ignore: ['**/node_modules/**', 'dist/**', 'src/.gen/**'] });
+  return fg(pattern, { cwd: rootDir, absolute: true, ignore: ['**/node_modules/**', 'dist/**', 'src/*.html'] });
 }
 
 describe('dangerous APIs', () => {
